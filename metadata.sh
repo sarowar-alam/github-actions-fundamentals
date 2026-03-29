@@ -55,8 +55,14 @@ IAM_ROLE=$(md $METADATA_URL/meta-data/iam/security-credentials/ || true)
 if [[ -n "$IAM_ROLE" ]]; then
   echo "IAM Role           : $IAM_ROLE"
   echo
-  echo "IAM Credentials:"
-  md "$METADATA_URL/meta-data/iam/security-credentials/$IAM_ROLE"
+  echo "IAM Credentials (sensitive fields redacted):"
+  # Fetch credentials but redact SecretAccessKey, Token, and AccessKeyId
+  # to avoid leaking live AWS credentials into CI/CD logs
+  md "$METADATA_URL/meta-data/iam/security-credentials/$IAM_ROLE" \
+    | sed \
+        -e 's/\("SecretAccessKey"\s*:\s*"\)[^"]*"/\1****REDACTED***"/g' \
+        -e 's/\("Token"\s*:\s*"\)[^"]*"/\1****REDACTED***"/g' \
+        -e 's/\("AccessKeyId"\s*:\s*"\)[^"]*"/\1****REDACTED***"/g'
 else
   echo "IAM Role           : None"
 fi
