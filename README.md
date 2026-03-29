@@ -6,11 +6,12 @@ Automated AWS EC2 instance management using GitHub Actions workflows over SSH �
 
 ## Table of Contents
 
-1. [Architecture Overview](#architecture-overview)
-2. [Repository Structure](#repository-structure)
-3. [Design Decisions](#design-decisions)
-4. [Prerequisites](#prerequisites)
-5. [Initial Bootstrap — One-Time Setup](#initial-bootstrap--one-time-setup)
+1. [What is GitHub Actions?](#what-is-github-actions)
+2. [Architecture Overview](#architecture-overview)
+3. [Repository Structure](#repository-structure)
+4. [Design Decisions](#design-decisions)
+5. [Prerequisites](#prerequisites)
+6. [Initial Bootstrap — One-Time Setup](#initial-bootstrap--one-time-setup)
    - [Step 0 — Launch an EC2 Instance on AWS](#step-0--launch-an-ec2-instance-on-aws)
    - [Step 0b — Create the GitHub Repository](#step-0b--create-the-github-repository)
    - [Step 1 — Generate an SSH key pair](#step-1--generate-an-ssh-key-pair)
@@ -20,16 +21,51 @@ Automated AWS EC2 instance management using GitHub Actions workflows over SSH �
    - [Step 5 — Configure GitHub Secrets](#step-5--configure-github-secrets)
    - [Step 6 — Deploy metadata.sh to EC2](#step-6--deploy-metadatash-to-ec2)
    - [Step 7 — Push to main and run pipelines in order](#step-7--push-to-main-and-run-pipelines-in-order)
-6. [Workflow Reference](#workflow-reference)
+7. [Workflow Reference](#workflow-reference)
    - [EC2 Connectivity Check (Automatic)](#1-ec2-connectivity-check-automatic)
    - [Fix The Hostname (Manual)](#2-fix-the-hostname-manual)
    - [Execute Metadata Script (Manual)](#3-execute-metadata-script-manual)
    - [Deploy Nginx & Dynamic Page (Manual)](#4-deploy-nginx--dynamic-page-manual)
-7. [Secrets Management](#secrets-management)
-8. [Introducing Changes Safely](#introducing-changes-safely)
-9. [Troubleshooting](#troubleshooting)
-10. [Security Considerations](#security-considerations)
-11. [Reliability Considerations](#reliability-considerations)
+8. [Secrets Management](#secrets-management)
+9. [Introducing Changes Safely](#introducing-changes-safely)
+10. [Troubleshooting](#troubleshooting)
+11. [Security Considerations](#security-considerations)
+12. [Reliability Considerations](#reliability-considerations)
+
+---
+
+## What is GitHub Actions?
+
+GitHub Actions is a CI/CD and automation platform built directly into GitHub. Any event in your repository — a push, a pull request, a schedule, or a manual click — can trigger automated workflows that run on cloud-hosted (or self-hosted) machines.
+
+### Core Concepts
+
+| Concept | What it is |
+|---|---|
+| **Workflow** | A YAML file in `.github/workflows/` — defines what runs and when |
+| **Trigger (`on:`)** | The event that starts the workflow: `push`, `pull_request`, `schedule`, `workflow_dispatch`, etc. |
+| **Job** | A group of steps that runs on one machine |
+| **Step** | A single shell command or a reusable Action |
+| **Runner** | The VM that executes the job — GitHub-hosted (`ubuntu-latest`, `windows-latest`, `macos-latest`) or self-hosted |
+| **Action** | A pre-built, reusable unit of work (e.g. `actions/checkout@v4`) published to the Marketplace |
+| **Secret** | Encrypted variables injected at runtime — never visible in logs |
+| **Artifact** | Files saved from a run (build outputs, test reports, generated pages) |
+
+### Key Capabilities
+
+| Area | Examples |
+|---|---|
+| **CI/CD** | Build, test, and deploy code on every push or PR across any language or framework |
+| **Infrastructure automation** | SSH into servers, run Terraform/Ansible, manage AWS/Azure/GCP resources |
+| **Security** | Dependency scanning (Dependabot), secret scanning, SAST with CodeQL, OIDC federation for short-lived cloud credentials |
+| **Containers** | Build and push Docker images, deploy to ECS/EKS/GKE |
+| **Matrix builds** | Test against multiple OS and language versions in parallel with a single `matrix:` config |
+| **Reusability** | Reusable workflows, composite actions, and the public Marketplace of 20,000+ community actions |
+| **Scheduled tasks** | Cron-syntax `schedule:` trigger — nightly builds, report generation, cleanup jobs |
+
+### How this repository uses it
+
+This repository uses GitHub Actions as a **remote operations platform** for AWS EC2 — replacing manual SSH sessions with audited, repeatable, secrets-safe pipeline runs. Every operation (connectivity check, hostname change, metadata collection, Nginx deployment) is a workflow that leaves a full audit trail in the Actions tab.
 
 ---
 
@@ -85,7 +121,6 @@ Automated AWS EC2 instance management using GitHub Actions workflows over SSH �
 │       ├── execute-metadata-script.yml  # Manual — runs metadata.sh on EC2
 │       └── deploy-nginx.yml             # Manual — installs Nginx, deploys live dashboard
 ├── metadata.sh                          # Bash script deployed to EC2; collects instance metadata
-├── index.html                           # Static visual template (live version generated by deploy-nginx.yml)
 ├── .gitignore                           # Excludes SSH keys, .env files, OS junk
 └── README.md                            # This file
 ```
@@ -625,3 +660,12 @@ echo "preserve_hostname: true" | sudo tee -a /etc/cloud/cloud.cfg
 | Verification step | After setting the hostname, a dedicated verify step re-reads the value and explicitly fails (`exit 1`) if it does not match — no silent failures |
 | Action version pinning | Workflows use `actions/checkout@v4` with a major version pin — receives patch/minor updates automatically while avoiding breaking major-version changes |
 | Key cleanup | All workflows remove `~/.ssh/ec2_key` at the end of the job, including if earlier steps fail (use `if: always()` when adding new cleanup steps) |
+
+---
+
+## 🧑‍💻 Author
+
+*Md. Sarowar Alam*  
+Lead DevOps Engineer, Hogarth Worldwide  
+📧 Email: sarowar@hotmail.com  
+🔗 LinkedIn: https://www.linkedin.com/in/sarowar/
