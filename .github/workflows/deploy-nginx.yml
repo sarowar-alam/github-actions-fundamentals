@@ -253,7 +253,7 @@ jobs:
           <div class="container">
             <div class="hero">
               <div class="status-pill"><span class="dot-green"></span>Server Online</div>
-              <h1>Hello <span class="hl">Ostad</span>,<br>this is from your Server</h1>
+              <h1>Hello <span class="hl">Ostad</span></h1>
               <p>Connected successfully via GitHub Actions over SSH.<br>All systems operational.</p>
               <div class="hostname-block">
                 <div class="field-label">Server Name / Hostname</div>
