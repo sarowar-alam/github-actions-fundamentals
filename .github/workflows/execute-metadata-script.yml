@@ -19,64 +19,27 @@ jobs:
           chmod 600 ~/.ssh/ec2_key
           ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
       
-      - name: Check if metadata.sh exists
-        id: check-file
+      - name: Deploy metadata.sh to EC2
         run: |
-          echo "Checking if metadata.sh exists on EC2..."
-          if ssh -i ~/.ssh/ec2_key ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "test -f /home/ubuntu/metadata.sh"; then
-            echo "File exists"
-            echo "file_exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "File does not exist at /home/ubuntu/metadata.sh"
-            echo "file_exists=false" >> $GITHUB_OUTPUT
-          fi
-      
+          echo "Uploading metadata.sh from repository to EC2..."
+          scp -i ~/.ssh/ec2_key metadata.sh \
+            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/${{ secrets.EC2_USER }}/metadata.sh
+          ssh -i ~/.ssh/ec2_key ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} \
+            "chmod +x /home/${{ secrets.EC2_USER }}/metadata.sh"
+          echo "metadata.sh deployed successfully"
+
       - name: Execute metadata.sh script
-        if: steps.check-file.outputs.file_exists == 'true'
         run: |
           echo "=================================================="
           echo "     Executing metadata.sh on EC2 Instance"
           echo "=================================================="
           echo ""
-          
-          ssh -i ~/.ssh/ec2_key ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
-            # Check if file is executable
-            if [ ! -x /home/ubuntu/metadata.sh ]; then
-              echo "File is not executable. Making it executable..."
-              chmod +x /home/ubuntu/metadata.sh
-              echo "Permissions updated successfully"
-            else
-              echo "File is already executable"
-            fi
-            
-            echo ""
-            echo "Executing script..."
-            echo ""
-            
-            # Execute the script
-            /home/ubuntu/metadata.sh
-          EOF
-          
+          ssh -i ~/.ssh/ec2_key ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} \
+            "/home/${{ secrets.EC2_USER }}/metadata.sh"
           echo ""
           echo "=================================================="
           echo "         Script Execution Complete"
           echo "=================================================="
-      
-      - name: File Not Found
-        if: steps.check-file.outputs.file_exists == 'false'
-        run: |
-          echo "=================================================="
-          echo "ERROR: metadata.sh not found!"
-          echo "=================================================="
-          echo ""
-          echo "Expected location: /home/ubuntu/metadata.sh"
-          echo ""
-          echo "Please ensure the file exists on your EC2 instance."
-          echo "You can create it with:"
-          echo "  ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}"
-          echo "  nano /home/ubuntu/metadata.sh"
-          echo ""
-          exit 1
       
       - name: Cleanup SSH Key
         if: always()
