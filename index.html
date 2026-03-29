@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hello Ostad — Server Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --bg-base:       #0d1117;
+      --bg-surface:    #161b22;
+      --bg-elevated:   #1c2128;
+      --border:        #30363d;
+      --border-subtle: #21262d;
+      --accent:        #2f81f7;
+      --accent-glow:   rgba(47, 129, 247, 0.15);
+      --green:         #3fb950;
+      --green-glow:    rgba(63, 185, 80, 0.12);
+      --text-primary:  #e6edf3;
+      --text-secondary:#8b949e;
+      --text-muted:    #484f58;
+      --radius:        12px;
+    }
+
+    html, body {
+      height: 100%;
+    }
+
+    body {
+      background-color: var(--bg-base);
+      background-image:
+        radial-gradient(ellipse 80% 50% at 50% -20%, rgba(47, 129, 247, 0.08), transparent),
+        radial-gradient(ellipse 60% 40% at 80% 100%, rgba(63, 185, 80, 0.05), transparent);
+      font-family: 'Inter', system-ui, sans-serif;
+      color: var(--text-primary);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    /* ── Top nav bar ── */
+    .topbar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 56px;
+      background: rgba(13, 17, 23, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 32px;
+      z-index: 100;
+    }
+
+    .topbar-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      letter-spacing: 0.01em;
+    }
+
+    .topbar-brand .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 8px var(--green);
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: 0.6; transform: scale(0.85); }
+    }
+
+    .topbar-meta {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* ── Main content ── */
+    .container {
+      width: 100%;
+      max-width: 680px;
+      margin-top: 56px;
+    }
+
+    /* ── Hero card ── */
+    .hero {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 48px;
+      text-align: center;
+      margin-bottom: 16px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      opacity: 0.6;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 12px;
+      background: var(--green-glow);
+      border: 1px solid rgba(63, 185, 80, 0.3);
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-weight: 500;
+      color: var(--green);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 28px;
+    }
+
+    .status-pill .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--green);
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    .hero h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      line-height: 1.2;
+      letter-spacing: -0.02em;
+      margin-bottom: 12px;
+    }
+
+    .hero h1 .highlight {
+      background: linear-gradient(90deg, #2f81f7, #58a6ff);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero p {
+      font-size: 0.95rem;
+      color: var(--text-secondary);
+      line-height: 1.6;
+      margin-bottom: 36px;
+    }
+
+    /* ── Hostname block ── */
+    .hostname-block {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px 28px;
+      display: inline-block;
+      min-width: 260px;
+    }
+
+    .hostname-block .field-label {
+      font-size: 0.7rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+
+    .hostname-block .hostname-value {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 1.5rem;
+      font-weight: 600;
+      color: var(--accent);
+      letter-spacing: 0.02em;
+    }
+
+    /* ── Info grid ── */
+    .info-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .info-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius);
+      padding: 20px 24px;
+    }
+
+    .info-card .card-label {
+      font-size: 0.7rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+
+    .info-card .card-value {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+    }
+
+    .info-card .card-value.green  { color: var(--green); }
+    .info-card .card-value.accent { color: var(--accent); }
+
+    /* ── Footer ── */
+    .footer {
+      text-align: center;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 8px;
+      padding-bottom: 24px;
+    }
+
+    .footer a {
+      color: var(--text-muted);
+      text-decoration: none;
+    }
+
+    .footer a:hover {
+      color: var(--text-secondary);
+    }
+
+    @media (max-width: 520px) {
+      .hero { padding: 32px 24px; }
+      .hero h1 { font-size: 1.5rem; }
+      .info-grid { grid-template-columns: 1fr; }
+      .topbar-meta { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top navigation bar -->
+  <nav class="topbar">
+    <div class="topbar-brand">
+      <span class="dot"></span>
+      GitHub Actions — EC2 Management
+    </div>
+    <div class="topbar-meta">github-actions-hello-world</div>
+  </nav>
+
+  <div class="container">
+
+    <!-- Hero -->
+    <div class="hero">
+      <div class="status-pill">
+        <span class="dot"></span>
+        Server Online
+      </div>
+
+      <h1>Hello <span class="highlight">Ostad</span>,<br>this is from your Server</h1>
+      <p>Connected successfully via GitHub Actions over SSH.<br>All systems operational.</p>
+
+      <div class="hostname-block">
+        <div class="field-label">Server Name / Hostname</div>
+        <div class="hostname-value" id="hostname">HelloWorld</div>
+      </div>
+    </div>
+
+    <!-- Info cards -->
+    <div class="info-grid">
+      <div class="info-card">
+        <div class="card-label">Pipeline</div>
+        <div class="card-value accent">EC2 Connectivity Check</div>
+      </div>
+      <div class="info-card">
+        <div class="card-label">Runner</div>
+        <div class="card-value">ubuntu-latest</div>
+      </div>
+      <div class="info-card">
+        <div class="card-label">Auth Method</div>
+        <div class="card-value">SSH / ED25519</div>
+      </div>
+      <div class="info-card">
+        <div class="card-label">Metadata Service</div>
+        <div class="card-value green">IMDSv2 Active</div>
+      </div>
+    </div>
+
+    <div class="footer">
+      Deployed via <a href="https://github.com/features/actions" target="_blank" rel="noopener">GitHub Actions</a>
+      &nbsp;·&nbsp; AWS EC2 &nbsp;·&nbsp; Ubuntu 22.04 LTS
+    </div>
+
+  </div>
+
+</body>
+</html>

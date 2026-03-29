@@ -1,0 +1,327 @@
+﻿name: Deploy Nginx & Dynamic Page
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy-nginx:
+    name: Install Nginx & Deploy Dynamic Index Page
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/ec2_key
+          chmod 600 ~/.ssh/ec2_key
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+
+      # â”€â”€ Step 1: Install Nginx â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      - name: Install Nginx on EC2
+        run: |
+          ssh -i ~/.ssh/ec2_key ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} \
+            'export DEBIAN_FRONTEND=noninteractive
+             set -e
+             echo "--------------------------------------------------"
+             echo "  Installing / Verifying Nginx"
+             echo "--------------------------------------------------"
+             sudo apt-get update -qq
+             sudo apt-get install -y nginx
+             sudo systemctl enable nginx
+             sudo systemctl start nginx 2>/dev/null || sudo systemctl restart nginx
+             echo "Version : $(nginx -v 2>&1)"
+             echo "Status  : $(sudo systemctl is-active nginx)"
+             echo "--------------------------------------------------"'
+
+      # â”€â”€ Step 2: Collect EC2 metadata â†’ runner GITHUB_ENV â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      # Each echo outputs KEY=VALUE which bash -s forwards over SSH stdout,
+      # and >> "$GITHUB_ENV" saves it so subsequent steps can read $SRV_*
+      - name: Collect EC2 Metadata
+        run: |
+          ssh -i ~/.ssh/ec2_key ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} \
+            bash -s >> "$GITHUB_ENV" << 'COLLECT'
+          set -euo pipefail
+          TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" \
+            -H "X-aws-ec2-metadata-token-ttl-seconds: 21600" 2>/dev/null || true)
+          md() {
+            [ -n "${TOKEN}" ] && \
+              curl -s --max-time 3 \
+                -H "X-aws-ec2-metadata-token: ${TOKEN}" \
+                "http://169.254.169.254/latest/meta-data/$1" 2>/dev/null \
+            || echo "N/A"
+          }
+          echo "SRV_HOSTNAME=$(hostname)"
+          echo "SRV_PUBLIC_IP=$(md public-ipv4)"
+          echo "SRV_PRIVATE_IP=$(md local-ipv4)"
+          echo "SRV_INSTANCE_ID=$(md instance-id)"
+          echo "SRV_INSTANCE_TYPE=$(md instance-type)"
+          echo "SRV_AZ=$(md placement/availability-zone)"
+          echo "SRV_REGION=$(md placement/region)"
+          echo "SRV_AMI_ID=$(md ami-id)"
+          echo "SRV_UPTIME=$(uptime -p 2>/dev/null || uptime)"
+          echo "SRV_NGINX=$(nginx -v 2>&1 | sed 's|nginx version: ||')"
+          echo "SRV_OS=$(lsb_release -ds 2>/dev/null | tr -d '"')"
+          if [ -n "${TOKEN}" ]; then
+            echo "SRV_IMDS=IMDSv2 Active"
+            echo "SRV_IMDS_CLASS=green"
+          else
+            echo "SRV_IMDS=Unavailable"
+            echo "SRV_IMDS_CLASS=yellow"
+          fi
+          COLLECT
+          {
+            printf 'SRV_DEPLOY_TIME=%s\n' "$(date -u '+%d %b %Y at %H:%M UTC')"
+            printf 'SRV_PIPELINE=%s\n'    "${{ github.workflow }}"
+            printf 'SRV_RUN_NUM=%s\n'     "${{ github.run_number }}"
+            printf 'SRV_ACTOR=%s\n'       "${{ github.actor }}"
+            printf 'SRV_REPO=%s\n'        "${{ github.repository }}"
+          } >> "$GITHUB_ENV"
+
+      # â”€â”€ Step 3: Build index.html on the runner using Python â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      # Python reads SRV_* env vars, substitutes %%PLACEHOLDER%% tokens in
+      # the HTML template, and writes /tmp/index.html â€” no nested heredoc.
+      - name: Generate Dynamic index.html
+        run: |
+          python3 << 'PYEOF'
+          import os, html as _h
+          v = lambda k: _h.escape(os.environ.get(k, 'N/A'))
+          imds_cls = os.environ.get('SRV_IMDS_CLASS', 'green')
+          page = """
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+          <meta charset="UTF-8"/>
+          <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+          <title>%%HOSTNAME%% &mdash; Server Dashboard</title>
+          <link rel="preconnect" href="https://fonts.googleapis.com"/>
+          <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+          <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet"/>
+          <style>
+          *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+          :root{
+            --bg-base:#0d1117;--bg-surface:#161b22;--bg-elevated:#1c2128;
+            --border:#30363d;--border-subtle:#21262d;
+            --accent:#2f81f7;--accent-glow:rgba(47,129,247,.15);
+            --green:#3fb950;--green-glow:rgba(63,185,80,.12);
+            --yellow:#d29922;
+            --text-primary:#e6edf3;--text-secondary:#8b949e;--text-muted:#484f58;
+            --radius:12px
+          }
+          html,body{height:100%}
+          body{
+            background-color:var(--bg-base);
+            background-image:
+              radial-gradient(ellipse 80% 50% at 50% -20%,rgba(47,129,247,.08),transparent),
+              radial-gradient(ellipse 60% 40% at 80% 100%,rgba(63,185,80,.05),transparent);
+            font-family:'Inter',system-ui,sans-serif;color:var(--text-primary);
+            min-height:100vh;display:flex;flex-direction:column;
+            align-items:center;padding:80px 24px 40px
+          }
+          .topbar{
+            position:fixed;top:0;left:0;right:0;height:56px;
+            background:rgba(13,17,23,.85);backdrop-filter:blur(12px);
+            border-bottom:1px solid var(--border-subtle);
+            display:flex;align-items:center;justify-content:space-between;
+            padding:0 32px;z-index:100
+          }
+          .topbar-brand{display:flex;align-items:center;gap:10px;font-size:.875rem;font-weight:600}
+          .dot-green{
+            width:8px;height:8px;border-radius:50%;
+            background:var(--green);box-shadow:0 0 8px var(--green);
+            animation:pulse 2s ease-in-out infinite
+          }
+          @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.6;transform:scale(.85)}}
+          .topbar-meta{font-size:.75rem;color:var(--text-muted);font-family:'JetBrains Mono',monospace}
+          .container{width:100%;max-width:780px}
+          .hero{
+            background:var(--bg-surface);border:1px solid var(--border);
+            border-radius:var(--radius);padding:48px;text-align:center;
+            margin-bottom:16px;position:relative;overflow:hidden
+          }
+          .hero::before{
+            content:'';position:absolute;top:0;left:0;right:0;height:1px;
+            background:linear-gradient(90deg,transparent,var(--accent),transparent);opacity:.6
+          }
+          .status-pill{
+            display:inline-flex;align-items:center;gap:6px;padding:4px 12px;
+            background:var(--green-glow);border:1px solid rgba(63,185,80,.3);
+            border-radius:999px;font-size:.72rem;font-weight:500;color:var(--green);
+            text-transform:uppercase;letter-spacing:.1em;margin-bottom:28px
+          }
+          .status-pill .dot-green{width:6px;height:6px}
+          .hero h1{font-size:2rem;font-weight:700;line-height:1.2;letter-spacing:-.02em;margin-bottom:12px}
+          .hl{
+            background:linear-gradient(90deg,#2f81f7,#58a6ff);
+            -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text
+          }
+          .hero p{font-size:.95rem;color:var(--text-secondary);line-height:1.6;margin-bottom:36px}
+          .hostname-block{
+            background:var(--bg-elevated);border:1px solid var(--border);
+            border-radius:8px;padding:20px 28px;display:inline-block;min-width:280px
+          }
+          .field-label{
+            font-size:.7rem;font-weight:500;text-transform:uppercase;
+            letter-spacing:.12em;color:var(--text-muted);margin-bottom:8px
+          }
+          .hostname-value{
+            font-family:'JetBrains Mono',monospace;font-size:1.5rem;
+            font-weight:600;color:var(--accent);letter-spacing:.02em
+          }
+          .section-heading{
+            font-size:.7rem;font-weight:600;text-transform:uppercase;
+            letter-spacing:.12em;color:var(--text-muted);
+            margin:24px 0 10px;padding-left:2px
+          }
+          .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+          .grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px}
+          .card{
+            background:var(--bg-surface);border:1px solid var(--border-subtle);
+            border-radius:var(--radius);padding:18px 22px
+          }
+          .card-label{
+            font-size:.7rem;font-weight:500;text-transform:uppercase;
+            letter-spacing:.1em;color:var(--text-muted);margin-bottom:6px
+          }
+          .card-value{
+            font-family:'JetBrains Mono',monospace;font-size:.85rem;
+            font-weight:600;color:var(--text-secondary);word-break:break-all
+          }
+          .accent{color:var(--accent)}.green{color:var(--green)}.yellow{color:var(--yellow)}
+          .deploy-banner{
+            background:var(--bg-surface);border:1px solid var(--border-subtle);
+            border-radius:var(--radius);padding:14px 22px;
+            display:flex;align-items:center;justify-content:space-between;
+            margin-bottom:16px;font-size:.8rem;color:var(--text-muted);
+            font-family:'JetBrains Mono',monospace
+          }
+          .tag{
+            padding:2px 8px;border-radius:4px;
+            background:var(--accent-glow);border:1px solid rgba(47,129,247,.3);
+            color:var(--accent);font-size:.72rem
+          }
+          .footer{text-align:center;font-size:.75rem;color:var(--text-muted);margin-top:20px}
+          .footer a{color:var(--text-muted);text-decoration:none}
+          .footer a:hover{color:var(--text-secondary)}
+          @media(max-width:560px){
+            .hero{padding:32px 20px}.hero h1{font-size:1.5rem}
+            .grid-2,.grid-3{grid-template-columns:1fr}
+            .topbar-meta{display:none}
+            .deploy-banner{flex-direction:column;gap:6px;align-items:flex-start}
+          }
+          </style>
+          </head>
+          <body>
+          <nav class="topbar">
+            <div class="topbar-brand"><span class="dot-green"></span>GitHub Actions &mdash; EC2 Management</div>
+            <div class="topbar-meta">%%REPO%%</div>
+          </nav>
+          <div class="container">
+            <div class="hero">
+              <div class="status-pill"><span class="dot-green"></span>Server Online</div>
+              <h1>Hello <span class="hl">Ostad</span>,<br>this is from your Server</h1>
+              <p>Connected successfully via GitHub Actions over SSH.<br>All systems operational.</p>
+              <div class="hostname-block">
+                <div class="field-label">Server Name / Hostname</div>
+                <div class="hostname-value">%%HOSTNAME%%</div>
+              </div>
+            </div>
+            <div class="deploy-banner">
+              <span>Last deployed: <strong>%%DEPLOY_TIME%%</strong> by %%ACTOR%%</span>
+              <span class="tag">Run #%%RUN_NUM%%</span>
+            </div>
+            <div class="section-heading">Pipeline &amp; Runner</div>
+            <div class="grid-2">
+              <div class="card"><div class="card-label">Pipeline</div><div class="card-value accent">%%PIPELINE%%</div></div>
+              <div class="card"><div class="card-label">Runner</div><div class="card-value">ubuntu-latest</div></div>
+              <div class="card"><div class="card-label">Auth Method</div><div class="card-value">SSH / ED25519</div></div>
+              <div class="card"><div class="card-label">Metadata Service</div><div class="card-value %%IMDS_CLASS%%">%%IMDS%%</div></div>
+            </div>
+            <div class="section-heading">Network</div>
+            <div class="grid-2">
+              <div class="card"><div class="card-label">Public IP</div><div class="card-value accent">%%PUBLIC_IP%%</div></div>
+              <div class="card"><div class="card-label">Private IP</div><div class="card-value">%%PRIVATE_IP%%</div></div>
+            </div>
+            <div class="section-heading">Instance</div>
+            <div class="grid-3">
+              <div class="card"><div class="card-label">Instance ID</div><div class="card-value">%%INSTANCE_ID%%</div></div>
+              <div class="card"><div class="card-label">Instance Type</div><div class="card-value">%%INSTANCE_TYPE%%</div></div>
+              <div class="card"><div class="card-label">AMI ID</div><div class="card-value">%%AMI_ID%%</div></div>
+              <div class="card"><div class="card-label">Region</div><div class="card-value">%%REGION%%</div></div>
+              <div class="card"><div class="card-label">Availability Zone</div><div class="card-value">%%AZ%%</div></div>
+              <div class="card"><div class="card-label">Uptime</div><div class="card-value green">%%UPTIME%%</div></div>
+            </div>
+            <div class="section-heading">System</div>
+            <div class="grid-2">
+              <div class="card"><div class="card-label">Operating System</div><div class="card-value">%%OS_INFO%%</div></div>
+              <div class="card"><div class="card-label">Web Server</div><div class="card-value">%%NGINX%%</div></div>
+            </div>
+            <div class="footer">
+              Deployed via <a href="https://github.com/features/actions" target="_blank" rel="noopener">GitHub Actions</a>
+              &nbsp;&middot;&nbsp; AWS EC2 &nbsp;&middot;&nbsp; %%OS_INFO%%
+            </div>
+          </div>
+          </body>
+          </html>
+          """
+          for ph, val in [
+            ('%%HOSTNAME%%',      v('SRV_HOSTNAME')),
+            ('%%PUBLIC_IP%%',     v('SRV_PUBLIC_IP')),
+            ('%%PRIVATE_IP%%',    v('SRV_PRIVATE_IP')),
+            ('%%INSTANCE_ID%%',   v('SRV_INSTANCE_ID')),
+            ('%%INSTANCE_TYPE%%', v('SRV_INSTANCE_TYPE')),
+            ('%%AZ%%',            v('SRV_AZ')),
+            ('%%REGION%%',        v('SRV_REGION')),
+            ('%%AMI_ID%%',        v('SRV_AMI_ID')),
+            ('%%UPTIME%%',        v('SRV_UPTIME')),
+            ('%%NGINX%%',         v('SRV_NGINX')),
+            ('%%OS_INFO%%',       v('SRV_OS')),
+            ('%%IMDS%%',          v('SRV_IMDS')),
+            ('%%IMDS_CLASS%%',    imds_cls),
+            ('%%DEPLOY_TIME%%',   v('SRV_DEPLOY_TIME')),
+            ('%%PIPELINE%%',      v('SRV_PIPELINE')),
+            ('%%RUN_NUM%%',       v('SRV_RUN_NUM')),
+            ('%%ACTOR%%',         v('SRV_ACTOR')),
+            ('%%REPO%%',          v('SRV_REPO')),
+          ]:
+            page = page.replace(ph, val)
+          with open('/tmp/index.html', 'w') as f:
+            f.write(page.lstrip('\n'))
+          print('index.html generated successfully')
+          PYEOF
+
+      # â”€â”€ Step 4: Upload index.html to EC2 and deploy via Nginx â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      - name: Upload and Deploy index.html
+        run: |
+          scp -i ~/.ssh/ec2_key /tmp/index.html \
+            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/tmp/index.html
+          ssh -i ~/.ssh/ec2_key ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} \
+            'sudo cp /tmp/index.html /var/www/html/index.html
+             sudo chown www-data:www-data /var/www/html/index.html
+             sudo chmod 644 /var/www/html/index.html
+             sudo systemctl reload nginx
+             echo "--------------------------------------------------"
+             echo "  Deployment complete!"
+             echo "--------------------------------------------------"'
+
+      # â”€â”€ Step 5: Verify port 80 is reachable â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      - name: Verify Site is Reachable on Port 80
+        run: |
+          echo "Probing http://${{ secrets.EC2_HOST }} ..."
+          sleep 3
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 \
+            "http://${{ secrets.EC2_HOST }}" || echo "000")
+          echo "HTTP response: $HTTP_STATUS"
+          if [ "$HTTP_STATUS" = "200" ]; then
+            echo "SUCCESS - site is live at http://${{ secrets.EC2_HOST }}"
+          else
+            echo "Got HTTP $HTTP_STATUS - port 80 may not be open"
+            echo "AWS Console -> EC2 -> Security Groups -> Inbound rules"
+            echo "Add rule: Type=HTTP, Protocol=TCP, Port=80, Source=0.0.0.0/0"
+          fi
+
+      - name: Cleanup SSH Key
+        if: always()
+        run: rm -f ~/.ssh/ec2_key
