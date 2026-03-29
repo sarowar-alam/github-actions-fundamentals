@@ -75,11 +75,11 @@ This repository uses GitHub Actions as a **remote operations platform** for AWS 
 ┌─────────────────────────────────────────────────────────────┐
 │                        GitHub                               │
 │                                                             │
-│  ┌──────────────┐     push to main     ┌─────────────────┐ │
-│  │  Developer   │ ──────────────────►  │  GitHub Actions │ │
-│  │  Workstation │                      │  ubuntu-latest  │ │
-│  │              │ ◄── workflow_dispatch │  Runner         │ │
-│  └──────────────┘  (manual trigger)    └────────┬────────┘ │
+│  ┌──────────────┐     push to main     ┌─────────────────┐  │
+│  │  Developer   │ ──────────────────►  │  GitHub Actions │  │
+│  │  Workstation │                      │  ubuntu-latest  │  │
+│  │              │◄── workflow_dispatch │  Runner         │  │
+│  └──────────────┘  (manual trigger)    └────────┬────────┘  │
 │                                                 │           │
 │  ┌───────────────────────────────┐              │ SSH       │
 │  │  Repository Secrets           │              │ (port 22) │
@@ -88,7 +88,7 @@ This repository uses GitHub Actions as a **remote operations platform** for AWS 
 │  └───────────────────────────────┘              │           │
 └─────────────────────────────────────────────────┼───────────┘
                                                   │
-                                       ┌──────────▼──────────┐
+                                       ┌──────────▼───────────┐
                                        │    AWS EC2 Instance  │
                                        │    (Ubuntu)          │
                                        │                      │
