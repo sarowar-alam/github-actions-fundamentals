@@ -1,4 +1,4 @@
-﻿name: Deploy Nginx & Dynamic Page
+name: Deploy Nginx & Dynamic Page
 
 on:
   workflow_dispatch:
@@ -19,26 +19,58 @@ jobs:
           chmod 600 ~/.ssh/ec2_key
           ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
 
-      # â”€â”€ Step 1: Install Nginx â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-      - name: Install Nginx on EC2
+      # -- Step 1: Set Hostname -----------------------------------------------
+      # Idempotent: skips if already set. Works on fresh and existing EC2.
+      - name: Set EC2 Hostname
+        run: |
+          ssh -i ~/.ssh/ec2_key ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} \
+            'TARGET="ostad-ubuntu-github-actions"
+             CURRENT=$(hostname)
+             echo "--------------------------------------------------"
+             echo "  Hostname Check"
+             echo "  Current  : $CURRENT"
+             echo "  Target   : $TARGET"
+             echo "--------------------------------------------------"
+             if [ "$CURRENT" = "$TARGET" ]; then
+               echo "  Status   : Already set -- no change needed"
+             else
+               echo "  Status   : Updating hostname ..."
+               sudo hostnamectl set-hostname "$TARGET"
+               echo "$TARGET" | sudo tee /etc/hostname > /dev/null
+               sudo sed -i "s/127.0.1.1.*/127.0.1.1\t$TARGET/g" /etc/hosts
+               echo "  Done     : $(hostname)"
+             fi
+             echo "--------------------------------------------------"'
+
+      # -- Step 2: Install or Update Nginx ------------------------------------
+      # Fresh EC2        -> apt-get install, enable, start
+      # Already running  -> systemctl reload only (zero-downtime, no re-install)
+      - name: Install or Update Nginx on EC2
         run: |
           ssh -i ~/.ssh/ec2_key ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} \
             'export DEBIAN_FRONTEND=noninteractive
              set -e
              echo "--------------------------------------------------"
-             echo "  Installing / Verifying Nginx"
-             echo "--------------------------------------------------"
-             sudo apt-get update -qq
-             sudo apt-get install -y nginx
-             sudo systemctl enable nginx
-             sudo systemctl start nginx 2>/dev/null || sudo systemctl restart nginx
-             echo "Version : $(nginx -v 2>&1)"
-             echo "Status  : $(sudo systemctl is-active nginx)"
+             if command -v nginx > /dev/null 2>&1; then
+               echo "  Nginx State  : Already installed"
+               echo "  Version      : $(nginx -v 2>&1)"
+               echo "  Action       : Reloading configuration ..."
+               sudo systemctl reload nginx
+               echo "  Status       : $(sudo systemctl is-active nginx)"
+             else
+               echo "  Nginx State  : Not installed -- installing now ..."
+               sudo apt-get update -qq
+               sudo apt-get install -y nginx
+               sudo systemctl enable nginx
+               sudo systemctl start nginx
+               echo "  Version      : $(nginx -v 2>&1)"
+               echo "  Status       : $(sudo systemctl is-active nginx)"
+             fi
              echo "--------------------------------------------------"'
 
-      # â”€â”€ Step 2: Collect EC2 metadata â†’ runner GITHUB_ENV â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-      # Each echo outputs KEY=VALUE which bash -s forwards over SSH stdout,
-      # and >> "$GITHUB_ENV" saves it so subsequent steps can read $SRV_*
+      # -- Step 3: Collect EC2 metadata -> runner GITHUB_ENV -----------------
+      # hostname is read AFTER step 1 sets it, so SRV_HOSTNAME reflects the
+      # new name "ostad-ubunut-github-actions" and renders it on the page.
       - name: Collect EC2 Metadata
         run: |
           ssh -i ~/.ssh/ec2_key ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} \
@@ -80,9 +112,9 @@ jobs:
             printf 'SRV_REPO=%s\n'        "${{ github.repository }}"
           } >> "$GITHUB_ENV"
 
-      # â”€â”€ Step 3: Build index.html on the runner using Python â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-      # Python reads SRV_* env vars, substitutes %%PLACEHOLDER%% tokens in
-      # the HTML template, and writes /tmp/index.html â€” no nested heredoc.
+      # -- Step 4: Build index.html on the runner using Python ----------------
+      # Python reads SRV_* env vars, substitutes %%PLACEHOLDER%% tokens,
+      # and writes /tmp/index.html -- no nested heredoc needed.
       - name: Generate Dynamic index.html
         run: |
           python3 << 'PYEOF'
@@ -292,7 +324,7 @@ jobs:
           print('index.html generated successfully')
           PYEOF
 
-      # â”€â”€ Step 4: Upload index.html to EC2 and deploy via Nginx â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      # -- Step 5: Upload index.html to EC2 and deploy via Nginx --------------
       - name: Upload and Deploy index.html
         run: |
           scp -i ~/.ssh/ec2_key /tmp/index.html \
@@ -306,7 +338,7 @@ jobs:
              echo "  Deployment complete!"
              echo "--------------------------------------------------"'
 
-      # â”€â”€ Step 5: Verify port 80 is reachable â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      # -- Step 6: Verify port 80 is reachable --------------------------------
       - name: Verify Site is Reachable on Port 80
         run: |
           echo "Probing http://${{ secrets.EC2_HOST }} ..."

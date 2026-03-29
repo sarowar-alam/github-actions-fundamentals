@@ -27,30 +27,30 @@ jobs:
           echo "Current hostname: $CURRENT_HOSTNAME"
           echo "current_hostname=$CURRENT_HOSTNAME" >> $GITHUB_OUTPUT
           
-          if [ "$CURRENT_HOSTNAME" = "HelloWorld" ]; then
-            echo "Hostname is already set to HelloWorld"
+          if [ "$CURRENT_HOSTNAME" = "ostad-ubuntu-github-actions" ]; then
+            echo "Hostname is already set to ostad-ubuntu-github-actions"
             echo "needs_change=false" >> $GITHUB_OUTPUT
           else
-            echo "Hostname needs to be changed to HelloWorld"
+            echo "Hostname needs to be changed to ostad-ubuntu-github-actions"
             echo "needs_change=true" >> $GITHUB_OUTPUT
           fi
       
-      - name: Set Hostname to HelloWorld
+      - name: Set Hostname to ostad-ubuntu-github-actions
         if: steps.check-hostname.outputs.needs_change == 'true'
         run: |
-          echo "Setting hostname to HelloWorld..."
+          echo "Setting hostname to ostad-ubuntu-github-actions..."
           ssh -i ~/.ssh/ec2_key ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
             # Set hostname temporarily (immediate effect)
-            sudo hostnamectl set-hostname HelloWorld
+            sudo hostnamectl set-hostname ostad-ubuntu-github-actions
             
             # Update /etc/hostname for persistence across reboots
-            echo "HelloWorld" | sudo tee /etc/hostname > /dev/null
+            echo "ostad-ubuntu-github-actions" | sudo tee /etc/hostname > /dev/null
             
             # Update /etc/hosts to reflect new hostname
-            sudo sed -i 's/127.0.1.1.*/127.0.1.1\tHelloWorld/g' /etc/hosts
+            sudo sed -i 's/127.0.1.1.*/127.0.1.1\tostad-ubuntu-github-actions/g' /etc/hosts
             
             echo "=================================================="
-            echo "Hostname has been set to HelloWorld"
+            echo "Hostname has been set to ostad-ubuntu-github-actions"
             echo "New hostname: $(hostname)"
             echo "=================================================="
           EOF
@@ -62,8 +62,8 @@ jobs:
           NEW_HOSTNAME=$(ssh -i ~/.ssh/ec2_key ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "hostname")
           echo "Verified hostname: $NEW_HOSTNAME"
           
-          if [ "$NEW_HOSTNAME" = "HelloWorld" ]; then
-            echo "SUCCESS: Hostname successfully changed to HelloWorld"
+          if [ "$NEW_HOSTNAME" = "ostad-ubuntu-github-actions" ]; then
+            echo "SUCCESS: Hostname successfully changed to ostad-ubuntu-github-actions"
           else
             echo "ERROR: Hostname change failed"
             exit 1
@@ -74,7 +74,7 @@ jobs:
         run: |
           echo "=================================================="
           echo "No changes needed."
-          echo "Hostname is already set to: HelloWorld"
+          echo "Hostname is already set to: ostad-ubuntu-github-actions"
           echo "=================================================="
       
       - name: Cleanup SSH Key
