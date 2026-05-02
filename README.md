@@ -26,7 +26,7 @@ Automated AWS EC2 instance management using GitHub Actions workflows over SSH �
    - [Fix The Hostname (Manual)](#2-fix-the-hostname-manual)
    - [Execute Metadata Script (Manual)](#3-execute-metadata-script-manual)
    - [Deploy Nginx & Dynamic Page (Manual)](#4-deploy-nginx--dynamic-page-manual)
-   - [Deploy NGINX to Server B via Self-Hosted Runner (Push)](#5-deploy-nginx-to-server-b-via-self-hosted-runner-push)
+   - [Deploy NGINX to Web-Server via Self-Hosted Runner (Push)](#5-deploy-nginx-to-web-server-via-self-hosted-runner-push)
 8. [Self-Hosted Runner — Deploy to Private EC2 Setup](#self-hosted-runner--deploy-to-private-ec2-setup)
 9. [Secrets Management](#secrets-management)
 10. [Introducing Changes Safely](#introducing-changes-safely)
@@ -122,7 +122,7 @@ This repository uses GitHub Actions as a **remote operations platform** for AWS 
 │       ├── fix-hostname.yml             # Manual — sets EC2 hostname to "HelloWorld"
 │       ├── execute-metadata-script.yml  # Manual — runs metadata.sh on EC2
 │       ├── deploy-nginx.yml             # Manual — installs Nginx, deploys live dashboard
-│       └── deploy.yaml                  # Auto on push — self-hosted runner deploys to private Server B
+│       └── deploy.yaml                  # Auto on push — self-hosted runner deploys to private Web-Server
 ├── metadata.sh                          # Bash script deployed to EC2; collects instance metadata
 ├── .gitignore                           # Excludes SSH keys, .env files, OS junk
 └── README.md                            # This file
@@ -666,28 +666,28 @@ echo "preserve_hostname: true" | sudo tee -a /etc/cloud/cloud.cfg
 
 ---
 
-### 5. Deploy NGINX to Server B via Self-Hosted Runner (Push)
+### 5. Deploy NGINX to Web-Server via Self-Hosted Runner (Push)
 
 | Property | Value |
 |---|---|
 | **File** | `.github/workflows/deploy.yaml` |
 | **Trigger** | Automatic — every `push` to `main` branch; also `workflow_dispatch` |
-| **Runner** | `self-hosted` — Server A (public subnet EC2, registered as GitHub Actions runner) |
+| **Runner** | `self-hosted` — Github-Runner (public subnet EC2, registered as GitHub Actions runner) |
 | **Idempotent** | Yes — NGINX install skipped if already present; page always overwritten with latest |
-| **Prerequisites** | Server A registered as self-hosted runner; `SERVER_B_SSH_KEY`, `SERVER_B_HOST`, `SERVER_B_USER` secrets set; port 80 open from Server A → Server B |
+| **Prerequisites** | Github-Runner registered as self-hosted runner; `SERVER_B_SSH_KEY`, `SERVER_B_HOST`, `SERVER_B_USER` secrets set; port 80 open from Github-Runner → Web-Server |
 
 **What it does, step by step:**
 
 | Step | Description |
 |---|---|
-| Checkout Repository | Checks out the repository onto Server A (`actions/checkout@v4`) |
+| Checkout Repository | Checks out the repository onto Github-Runner (`actions/checkout@v4`) |
 | Setup SSH Key | Writes `SERVER_B_SSH_KEY` to `~/.ssh/server_b_key` (mode `600`); pre-populates `known_hosts` via `ssh-keyscan` |
-| Verify SSH Connectivity | SSH probe from Server A → Server B with `ConnectTimeout=10`; prints hostname and private IP |
-| Upload index.html | `scp` copies `index.html` from repo to `/tmp/index.html` on Server B |
-| Install NGINX & Deploy Page | SSH into Server B: idempotent NGINX install → copy page to `/var/www/html/index.html` → reload or start NGINX |
-| Health Check | `curl` from Server A to `http://SERVER_B_HOST` — fails the job if response is not HTTP 200 |
+| Verify SSH Connectivity | SSH probe from Github-Runner → Web-Server with `ConnectTimeout=10`; prints hostname and private IP |
+| Upload index.html | `scp` copies `index.html` from repo to `/tmp/index.html` on Web-Server |
+| Install NGINX & Deploy Page | SSH into Web-Server: idempotent NGINX install → copy page to `/var/www/html/index.html` → reload or start NGINX |
+| Health Check | `curl` from Github-Runner to `http://SERVER_B_HOST` — fails the job if response is not HTTP 200 |
 | Deployment Summary | Logs repo, branch, commit SHA, actor, run number, and target host |
-| Cleanup SSH Key | Removes `~/.ssh/server_b_key` from Server A — runs unconditionally (`if: always()`) |
+| Cleanup SSH Key | Removes `~/.ssh/server_b_key` from Github-Runner — runs unconditionally (`if: always()`) |
 
 ---
 
@@ -703,13 +703,13 @@ This section covers the complete one-time setup required to run `deploy.yaml`.
                         │ dispatches job to
                         ▼
               ┌─────────────────────┐
-              │  Server A (Runner)  │  Public subnet, internet access
-              │  self-hosted runner │  SSH key to Server B
+              │  Github-Runner      │  Public subnet, internet access
+              │  self-hosted runner │  SSH key to Web-Server
               └────────┬────────────┘
                        │ SSH (port 22, private IP)
                        ▼
               ┌─────────────────────┐
-              │  Server B (Target)  │  Private subnet, no public IP
+              │  Web-Server         │  Private subnet, no public IP
               │  NGINX on port 80   │
               └────────┬────────────┘
                        │ port 80
@@ -719,13 +719,13 @@ This section covers the complete one-time setup required to run `deploy.yaml`.
               └─────────────────────┘
 ```
 
-### Step 1 — Register Server A as a Self-Hosted Runner
+### Step 1 — Register Github-Runner as a Self-Hosted Runner
 
 1. Go to **GitHub repo → Settings → Actions → Runners → New self-hosted runner**
-2. Select **Linux** and follow the displayed commands on Server A:
+2. Select **Linux** and follow the displayed commands on Github-Runner:
 
 ```bash
-# On Server A — download and configure the runner
+# On Github-Runner — download and configure the runner
 mkdir actions-runner && cd actions-runner
 curl -o actions-runner-linux-x64.tar.gz -L \
   https://github.com/actions/runner/releases/latest/download/actions-runner-linux-x64.tar.gz
@@ -741,9 +741,9 @@ sudo ./svc.sh start
 sudo ./svc.sh status   # should show: active (running)
 ```
 
-### Step 2 — Generate SSH key for Server A → Server B
+### Step 2 — Generate SSH key for Github-Runner → Web-Server
 
-Run this **on Server A**:
+Run this **on Github-Runner**:
 
 ```bash
 ssh-keygen -t ed25519 -C "github-actions-server-b" -f ~/.ssh/server_b_deploy -N ""
@@ -770,10 +770,10 @@ Navigate to: **GitHub repo → Settings → Secrets and variables → Actions �
 | Secret | Value |
 |---|---|
 | `SERVER_B_SSH_KEY` | Full content of `~/.ssh/server_b_deploy` (private key, including `-----BEGIN` and `-----END` lines) |
-| `SERVER_B_HOST` | Private IP of Server B — e.g. `10.0.1.50` |
-| `SERVER_B_USER` | SSH user on Server B — `ubuntu` |
+| `SERVER_B_HOST` | Private IP of Web-Server — e.g. `10.0.1.50` |
+| `SERVER_B_USER` | SSH user on Web-Server — `ubuntu` |
 
-**Copy the private key value on Server A:**
+**Copy the private key value on Github-Runner:**
 
 ```bash
 cat ~/.ssh/server_b_deploy
@@ -923,7 +923,7 @@ Once the pipeline is green, open `https://app.yourdomain.com` — you will see t
 
 ---
 
-## 🧑‍💻 Author
+## 🧑‍💻 Project Lead
 
 *Md. Sarowar Alam*  
 Lead DevOps Engineer, Hogarth Worldwide  
