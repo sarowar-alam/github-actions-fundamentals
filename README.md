@@ -26,11 +26,13 @@ Automated AWS EC2 instance management using GitHub Actions workflows over SSH �
    - [Fix The Hostname (Manual)](#2-fix-the-hostname-manual)
    - [Execute Metadata Script (Manual)](#3-execute-metadata-script-manual)
    - [Deploy Nginx & Dynamic Page (Manual)](#4-deploy-nginx--dynamic-page-manual)
-8. [Secrets Management](#secrets-management)
-9. [Introducing Changes Safely](#introducing-changes-safely)
-10. [Troubleshooting](#troubleshooting)
-11. [Security Considerations](#security-considerations)
-12. [Reliability Considerations](#reliability-considerations)
+   - [Deploy NGINX to Server B via Self-Hosted Runner (Push)](#5-deploy-nginx-to-server-b-via-self-hosted-runner-push)
+8. [Self-Hosted Runner — Deploy to Private EC2 Setup](#self-hosted-runner--deploy-to-private-ec2-setup)
+9. [Secrets Management](#secrets-management)
+10. [Introducing Changes Safely](#introducing-changes-safely)
+11. [Troubleshooting](#troubleshooting)
+12. [Security Considerations](#security-considerations)
+13. [Reliability Considerations](#reliability-considerations)
 
 ---
 
@@ -119,7 +121,8 @@ This repository uses GitHub Actions as a **remote operations platform** for AWS 
 │       ├── ec2-connectivity-check.yml   # Auto-runs on every push to main
 │       ├── fix-hostname.yml             # Manual — sets EC2 hostname to "HelloWorld"
 │       ├── execute-metadata-script.yml  # Manual — runs metadata.sh on EC2
-│       └── deploy-nginx.yml             # Manual — installs Nginx, deploys live dashboard
+│       ├── deploy-nginx.yml             # Manual — installs Nginx, deploys live dashboard
+│       └── deploy.yaml                  # Auto on push — self-hosted runner deploys to private Server B
 ├── metadata.sh                          # Bash script deployed to EC2; collects instance metadata
 ├── .gitignore                           # Excludes SSH keys, .env files, OS junk
 └── README.md                            # This file
@@ -660,6 +663,143 @@ echo "preserve_hostname: true" | sudo tee -a /etc/cloud/cloud.cfg
 | Verification step | After setting the hostname, a dedicated verify step re-reads the value and explicitly fails (`exit 1`) if it does not match — no silent failures |
 | Action version pinning | Workflows use `actions/checkout@v4` with a major version pin — receives patch/minor updates automatically while avoiding breaking major-version changes |
 | Key cleanup | All workflows remove `~/.ssh/ec2_key` at the end of the job, including if earlier steps fail (use `if: always()` when adding new cleanup steps) |
+
+---
+
+### 5. Deploy NGINX to Server B via Self-Hosted Runner (Push)
+
+| Property | Value |
+|---|---|
+| **File** | `.github/workflows/deploy.yaml` |
+| **Trigger** | Automatic — every `push` to `main` branch; also `workflow_dispatch` |
+| **Runner** | `self-hosted` — Server A (public subnet EC2, registered as GitHub Actions runner) |
+| **Idempotent** | Yes — NGINX install skipped if already present; page always overwritten with latest |
+| **Prerequisites** | Server A registered as self-hosted runner; `SERVER_B_SSH_KEY`, `SERVER_B_HOST`, `SERVER_B_USER` secrets set; port 80 open from Server A → Server B |
+
+**What it does, step by step:**
+
+| Step | Description |
+|---|---|
+| Checkout Repository | Checks out the repository onto Server A (`actions/checkout@v4`) |
+| Setup SSH Key | Writes `SERVER_B_SSH_KEY` to `~/.ssh/server_b_key` (mode `600`); pre-populates `known_hosts` via `ssh-keyscan` |
+| Verify SSH Connectivity | SSH probe from Server A → Server B with `ConnectTimeout=10`; prints hostname and private IP |
+| Upload index.html | `scp` copies `index.html` from repo to `/tmp/index.html` on Server B |
+| Install NGINX & Deploy Page | SSH into Server B: idempotent NGINX install → copy page to `/var/www/html/index.html` → reload or start NGINX |
+| Health Check | `curl` from Server A to `http://SERVER_B_HOST` — fails the job if response is not HTTP 200 |
+| Deployment Summary | Logs repo, branch, commit SHA, actor, run number, and target host |
+| Cleanup SSH Key | Removes `~/.ssh/server_b_key` from Server A — runs unconditionally (`if: always()`) |
+
+---
+
+## Self-Hosted Runner — Deploy to Private EC2 Setup
+
+This section covers the complete one-time setup required to run `deploy.yaml`.
+
+### Infrastructure Overview
+
+```
+  GitHub ──push──► GitHub Actions
+                        │
+                        │ dispatches job to
+                        ▼
+              ┌─────────────────────┐
+              │  Server A (Runner)  │  Public subnet, internet access
+              │  self-hosted runner │  SSH key to Server B
+              └────────┬────────────┘
+                       │ SSH (port 22, private IP)
+                       ▼
+              ┌─────────────────────┐
+              │  Server B (Target)  │  Private subnet, no public IP
+              │  NGINX on port 80   │
+              └────────┬────────────┘
+                       │ port 80
+                       ▼
+              ┌─────────────────────┐
+              │  AWS ALB (HTTPS)    │  ACM certificate, public
+              └─────────────────────┘
+```
+
+### Step 1 — Register Server A as a Self-Hosted Runner
+
+1. Go to **GitHub repo → Settings → Actions → Runners → New self-hosted runner**
+2. Select **Linux** and follow the displayed commands on Server A:
+
+```bash
+# On Server A — download and configure the runner
+mkdir actions-runner && cd actions-runner
+curl -o actions-runner-linux-x64.tar.gz -L \
+  https://github.com/actions/runner/releases/latest/download/actions-runner-linux-x64.tar.gz
+tar xzf actions-runner-linux-x64.tar.gz
+./config.sh --url https://github.com/<YOUR_USERNAME>/<YOUR_REPO> --token <TOKEN_FROM_GITHUB>
+```
+
+3. Install and start as a system service so it survives reboots:
+
+```bash
+sudo ./svc.sh install
+sudo ./svc.sh start
+sudo ./svc.sh status   # should show: active (running)
+```
+
+### Step 2 — Generate SSH key for Server A → Server B
+
+Run this **on Server A**:
+
+```bash
+ssh-keygen -t ed25519 -C "github-actions-server-b" -f ~/.ssh/server_b_deploy -N ""
+```
+
+Copy the public key to Server B:
+
+```bash
+ssh-copy-id -i ~/.ssh/server_b_deploy.pub ubuntu@<SERVER_B_PRIVATE_IP>
+# or manually:
+ssh ubuntu@<SERVER_B_PRIVATE_IP> "echo '$(cat ~/.ssh/server_b_deploy.pub)' >> ~/.ssh/authorized_keys"
+```
+
+Verify it works:
+
+```bash
+ssh -i ~/.ssh/server_b_deploy ubuntu@<SERVER_B_PRIVATE_IP> "hostname"
+```
+
+### Step 3 — Add GitHub Secrets
+
+Navigate to: **GitHub repo → Settings → Secrets and variables → Actions → New repository secret**
+
+| Secret | Value |
+|---|---|
+| `SERVER_B_SSH_KEY` | Full content of `~/.ssh/server_b_deploy` (private key, including `-----BEGIN` and `-----END` lines) |
+| `SERVER_B_HOST` | Private IP of Server B — e.g. `10.0.1.50` |
+| `SERVER_B_USER` | SSH user on Server B — `ubuntu` |
+
+**Copy the private key value on Server A:**
+
+```bash
+cat ~/.ssh/server_b_deploy
+# Copy entire output including header and footer lines
+```
+
+### Step 4 — Security Group Rules
+
+| Rule | Direction | Source | Destination | Port |
+|---|---|---|---|---|
+| SSH | Inbound on Server B | Server A security group ID | Server B | 22 |
+| HTTP | Inbound on Server B | ALB security group ID | Server B | 80 |
+| HTTPS | Inbound on ALB | `0.0.0.0/0` | ALB | 443 |
+| All outbound | Outbound on Server B | Server B | `0.0.0.0/0` | All (for `apt-get`) |
+
+### Step 5 — Push and verify
+
+```bash
+git add .
+git commit -m "add: self-hosted NGINX deploy pipeline"
+git push origin main
+```
+
+Go to **GitHub → Actions tab → Deploy NGINX to Server B** and watch the run. All 8 steps should go green. The health check will confirm NGINX is serving HTTP 200 on Server B's private IP.
+
+Once the pipeline is green, your ALB (pointed at Server B port 80) will serve the page publicly over HTTPS.
 
 ---
 

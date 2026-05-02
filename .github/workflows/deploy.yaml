@@ -1,0 +1,131 @@
+name: Deploy NGINX to Server B
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+# ─────────────────────────────────────────────────────────────────────────────
+# REQUIRED GITHUB SECRETS
+#   SERVER_B_SSH_KEY  : full private key to SSH from Server A → Server B
+#   SERVER_B_HOST     : private IP of Server B (e.g. 10.0.1.50)
+#   SERVER_B_USER     : SSH user on Server B (e.g. ubuntu)
+# ─────────────────────────────────────────────────────────────────────────────
+
+jobs:
+  deploy:
+    name: Deploy NGINX & index.html to Server B
+    runs-on: self-hosted   # executes on Server A (your self-hosted runner)
+
+    steps:
+      # ── 1. Checkout repository on Server A ─────────────────────────────────
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # ── 2. Write SSH key for Server B onto Server A runner ─────────────────
+      - name: Setup SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SERVER_B_SSH_KEY }}" > ~/.ssh/server_b_key
+          chmod 600 ~/.ssh/server_b_key
+          ssh-keyscan -H "${{ secrets.SERVER_B_HOST }}" >> ~/.ssh/known_hosts
+
+      # ── 3. Verify SSH connectivity from Server A → Server B ────────────────
+      - name: Verify SSH Connectivity
+        run: |
+          echo "──────────────────────────────────────────"
+          echo "  Testing SSH: Server A → Server B"
+          ssh -i ~/.ssh/server_b_key \
+              -o ConnectTimeout=10 \
+              "${{ secrets.SERVER_B_USER }}@${{ secrets.SERVER_B_HOST }}" \
+              "echo '  Connected to:' \$(hostname) '('\$(hostname -I | awk '{print \$1}')')'"
+          echo "──────────────────────────────────────────"
+
+      # ── 4. Upload index.html from repo to Server B via SCP ─────────────────
+      - name: Upload index.html to Server B
+        run: |
+          scp -i ~/.ssh/server_b_key \
+              index.html \
+              "${{ secrets.SERVER_B_USER }}@${{ secrets.SERVER_B_HOST }}:/tmp/index.html"
+          echo "index.html uploaded to /tmp/index.html on Server B"
+
+      # ── 5. Install NGINX (idempotent), deploy page, start/reload ───────────
+      - name: Install NGINX & Deploy Page
+        run: |
+          ssh -i ~/.ssh/server_b_key \
+              "${{ secrets.SERVER_B_USER }}@${{ secrets.SERVER_B_HOST }}" << 'ENDSSH'
+          set -euo pipefail
+
+          echo "══════════════════════════════════════════"
+          echo "  Host: $(hostname) | IP: $(hostname -I | awk '{print $1}')"
+          echo "══════════════════════════════════════════"
+
+          # Idempotent install — skip if already present
+          if command -v nginx > /dev/null 2>&1; then
+            echo "  NGINX : Already installed ($(nginx -v 2>&1))"
+          else
+            echo "  NGINX : Not found — installing ..."
+            sudo apt-get update -qq
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nginx
+            sudo systemctl enable nginx
+            echo "  NGINX : Installed"
+          fi
+
+          # Deploy page
+          sudo cp /tmp/index.html /var/www/html/index.html
+          sudo chown www-data:www-data /var/www/html/index.html
+          sudo chmod 644 /var/www/html/index.html
+          echo "  Page  : Deployed to /var/www/html/index.html"
+
+          # Start or reload — zero-downtime if already running
+          if sudo systemctl is-active --quiet nginx; then
+            sudo systemctl reload nginx
+            echo "  NGINX : Reloaded (zero-downtime)"
+          else
+            sudo systemctl start nginx
+            echo "  NGINX : Started"
+          fi
+
+          echo "  Status: $(sudo systemctl is-active nginx)"
+          echo "══════════════════════════════════════════"
+          ENDSSH
+
+      # ── 6. Health check — curl Server B port 80 from Server A ──────────────
+      - name: Health Check (port 80)
+        run: |
+          echo "──────────────────────────────────────────"
+          echo "  Health Check: http://${{ secrets.SERVER_B_HOST }}"
+          sleep 2
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            --max-time 10 "http://${{ secrets.SERVER_B_HOST }}" || echo "000")
+          echo "  HTTP Status: $HTTP_STATUS"
+          if [ "$HTTP_STATUS" = "200" ]; then
+            echo "  PASS - NGINX is healthy and serving the page"
+          else
+            echo "  FAIL - Got HTTP $HTTP_STATUS"
+            echo "  Check: NGINX service status, security groups port 80"
+            exit 1
+          fi
+          echo "──────────────────────────────────────────"
+
+      # ── 7. Deployment summary ───────────────────────────────────────────────
+      - name: Deployment Summary
+        run: |
+          echo "══════════════════════════════════════════"
+          echo "  DEPLOYMENT COMPLETE"
+          echo "  Repository : ${{ github.repository }}"
+          echo "  Branch     : ${{ github.ref_name }}"
+          echo "  Commit     : ${{ github.sha }}"
+          echo "  Actor      : ${{ github.actor }}"
+          echo "  Run #      : ${{ github.run_number }}"
+          echo "  Target     : ${{ secrets.SERVER_B_HOST }} (private subnet)"
+          echo "  Public URL : via ALB HTTPS endpoint"
+          echo "══════════════════════════════════════════"
+
+      # ── 8. Always clean SSH key off runner disk ─────────────────────────────
+      - name: Cleanup SSH Key
+        if: always()
+        run: |
+          rm -f ~/.ssh/server_b_key
+          echo "SSH key removed from runner."

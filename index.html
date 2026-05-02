@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Deployed via GitHub Actions</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: #0d1117;
+      color: #e6edf3;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 16px;
+      padding: 48px 56px;
+      max-width: 640px;
+      width: 100%;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, #2f81f7, transparent);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(63, 185, 80, .12);
+      border: 1px solid rgba(63, 185, 80, .3);
+      border-radius: 999px;
+      padding: 4px 14px;
+      font-size: .75rem;
+      font-weight: 600;
+      color: #3fb950;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      margin-bottom: 32px;
+    }
+
+    .dot {
+      width: 7px;
+      height: 7px;
+      background: #3fb950;
+      border-radius: 50%;
+      box-shadow: 0 0 6px #3fb950;
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: .4; transform: scale(.85); }
+    }
+
+    h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      letter-spacing: -.02em;
+      margin-bottom: 12px;
+      line-height: 1.2;
+    }
+
+    h1 span { color: #2f81f7; }
+
+    p {
+      color: #8b949e;
+      font-size: .95rem;
+      line-height: 1.7;
+      margin-bottom: 36px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 36px;
+    }
+
+    .info {
+      background: #1c2128;
+      border: 1px solid #21262d;
+      border-radius: 10px;
+      padding: 14px 18px;
+      text-align: left;
+    }
+
+    .info-label {
+      font-size: .68rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      color: #484f58;
+      margin-bottom: 4px;
+    }
+
+    .info-value {
+      font-size: .85rem;
+      font-weight: 600;
+      color: #8b949e;
+    }
+
+    .divider {
+      border: none;
+      border-top: 1px solid #21262d;
+      margin-bottom: 20px;
+    }
+
+    .footer {
+      font-size: .75rem;
+      color: #484f58;
+    }
+
+    @media (max-width: 480px) {
+      .card  { padding: 32px 24px; }
+      .grid  { grid-template-columns: 1fr; }
+      h1     { font-size: 1.5rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+
+    <div class="badge">
+      <span class="dot"></span>
+      Deployed Successfully
+    </div>
+
+    <h1>Delivered by <span>GitHub Actions</span></h1>
+
+    <p>
+      This page was built, deployed, and served automatically via a
+      GitHub Actions pipeline running on a self-hosted runner —
+      no manual SSH required.
+    </p>
+
+    <div class="grid">
+      <div class="info">
+        <div class="info-label">Server</div>
+        <div class="info-value">Private EC2 (Server B)</div>
+      </div>
+      <div class="info">
+        <div class="info-label">Web Server</div>
+        <div class="info-value">NGINX</div>
+      </div>
+      <div class="info">
+        <div class="info-label">Public Access</div>
+        <div class="info-value">ALB → HTTPS</div>
+      </div>
+      <div class="info">
+        <div class="info-label">Runner</div>
+        <div class="info-value">Self-hosted (Server A)</div>
+      </div>
+      <div class="info">
+        <div class="info-label">Network</div>
+        <div class="info-value">Private Subnet</div>
+      </div>
+      <div class="info">
+        <div class="info-label">Certificate</div>
+        <div class="info-value">AWS ACM (HTTPS)</div>
+      </div>
+    </div>
+
+    <hr class="divider" />
+
+    <div class="footer">
+      Hogarth Worldwide &nbsp;&middot;&nbsp; DevOps &nbsp;&middot;&nbsp; GitHub Actions Pipeline
+    </div>
+
+  </div>
+</body>
+</html>
