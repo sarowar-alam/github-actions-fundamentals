@@ -1,6 +1,6 @@
 # EC2 Management via GitHub Actions
 
-Automated AWS EC2 instance management using GitHub Actions workflows over SSH — no AWS CLI, no IAM user credentials, no bastion host required. All operations are driven by GitHub-hosted runners connecting directly to EC2 via a stored SSH key.  || Check On Push .. Main Branch
+Automated AWS EC2 instance management using GitHub Actions workflows over SSH — no AWS CLI, no IAM user credentials, no bastion host required. All operations are driven by GitHub-hosted runners connecting directly to EC2 via a stored SSH key.
 
 ---
 
@@ -789,7 +789,127 @@ cat ~/.ssh/server_b_deploy
 | HTTPS | Inbound on ALB | `0.0.0.0/0` | ALB | 443 |
 | All outbound | Outbound on Server B | Server B | `0.0.0.0/0` | All (for `apt-get`) |
 
-### Step 5 — Push and verify
+### Step 5 — Create ALB, Request ACM Certificate, and Configure HTTPS
+
+#### 5a — Request an ACM Certificate
+
+1. Go to **AWS Console → Certificate Manager → Request a certificate**
+2. Select **Request a public certificate** → click **Next**
+3. Enter your domain name (e.g. `app.yourdomain.com` or `*.yourdomain.com` for wildcard)
+4. Validation method: **DNS validation** (recommended — no email required)
+5. Click **Request**
+6. Click the certificate → expand the domain → click **Create records in Route 53** (if using Route 53) — or copy the CNAME name/value and add it manually in your DNS provider
+7. Wait 1–5 minutes until status changes to **Issued**
+
+> **Note:** ACM certificates are free and auto-renew. The certificate must be in **us-east-1** if used with CloudFront, or in the **same region as your ALB** for direct ALB use.
+
+---
+
+#### 5b — Create the Application Load Balancer
+
+1. Go to **AWS Console → EC2 → Load Balancers → Create load balancer**
+2. Select **Application Load Balancer** → click **Create**
+3. Configure:
+
+   | Setting | Value |
+   |---|---|
+   | Name | `server-b-alb` (or any name) |
+   | Scheme | **Internet-facing** |
+   | IP address type | IPv4 |
+   | VPC | Select the VPC containing Server B |
+   | Subnets | Select at least **two public subnets** (ALB requires 2 AZs) |
+
+4. Security group: create or select one with inbound **TCP 80** and **TCP 443** from `0.0.0.0/0`
+
+---
+
+#### 5c — Create the Target Group (points to Server B)
+
+1. During ALB creation click **Create target group** (opens new tab) or go to **EC2 → Target Groups → Create**
+2. Configure:
+
+   | Setting | Value |
+   |---|---|
+   | Target type | **Instances** |
+   | Name | `server-b-tg` |
+   | Protocol | HTTP |
+   | Port | **80** |
+   | VPC | Same VPC as Server B |
+   | Health check path | `/` |
+   | Health check protocol | HTTP |
+
+3. Click **Next** → select Server B instance from the list → click **Include as pending below** → **Create target group**
+
+---
+
+#### 5d — Add Listeners to the ALB
+
+Back on the ALB creation page:
+
+**Listener 1 — HTTPS (port 443)**
+1. Click **Add listener**
+2. Protocol: **HTTPS**, Port: **443**
+3. Default action: **Forward to** → select `server-b-tg`
+4. Under **Secure listener settings** → select your ACM certificate from the dropdown
+5. Security policy: `ELBSecurityPolicy-TLS13-1-2-2021-06` (recommended)
+
+**Listener 2 — HTTP redirect to HTTPS (port 80)**
+1. Click **Add listener**
+2. Protocol: **HTTP**, Port: **80**
+3. Default action: **Redirect to HTTPS**
+   - Protocol: HTTPS, Port: 443, Status code: **301 (Permanent)**
+
+4. Click **Create load balancer**
+
+---
+
+#### 5e — Point Your Domain to the ALB
+
+In your DNS provider (e.g. Route 53):
+
+1. Go to **Route 53 → Hosted zones → your domain**
+2. Click **Create record**
+3. Configure:
+
+   | Setting | Value |
+   |---|---|
+   | Record name | `app` (or `@` for root domain) |
+   | Record type | **A** |
+   | Alias | **Yes** |
+   | Route traffic to | **Alias to Application and Classic Load Balancer** |
+   | Region | Your ALB region |
+   | Load balancer | Select your ALB from dropdown |
+
+4. Click **Create records**
+
+DNS propagation takes 1–2 minutes with Route 53.
+
+---
+
+#### 5f — Verify end-to-end
+
+```
+Browser → https://app.yourdomain.com
+         ↓
+         ALB (HTTPS :443, ACM cert terminates TLS)
+         ↓
+         ALB forwards HTTP to Server B :80
+         ↓
+         NGINX serves /var/www/html/index.html
+         ↓
+         Browser renders your deployed page
+```
+
+Also verify the HTTP → HTTPS redirect:
+```bash
+curl -I http://app.yourdomain.com
+# Expected: HTTP/1.1 301 Moved Permanently
+# Location: https://app.yourdomain.com/
+```
+
+---
+
+### Step 6 — Push and verify pipeline
 
 ```bash
 git add .
@@ -799,7 +919,7 @@ git push origin main
 
 Go to **GitHub → Actions tab → Deploy NGINX to Server B** and watch the run. All 8 steps should go green. The health check will confirm NGINX is serving HTTP 200 on Server B's private IP.
 
-Once the pipeline is green, your ALB (pointed at Server B port 80) will serve the page publicly over HTTPS.
+Once the pipeline is green, open `https://app.yourdomain.com` — you will see the deployed page served securely over HTTPS via the ALB.
 
 ---
 
