@@ -4,7 +4,7 @@ Automated AWS EC2 instance management using GitHub Actions workflows over SSH â€
 ```
 git remote set-url origin https://github.com/USERNAME/NEW-REPO.git
 ```
-
+#Pull Request from CLI
 ---
 
 ## Table of Contents
