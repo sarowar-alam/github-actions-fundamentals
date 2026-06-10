@@ -94,7 +94,7 @@ jobs:
             echo "  Status   : Creating new Security Group ..."
             SG_ID=$(aws ec2 create-security-group \
               --group-name "$SG_NAME" \
-              --description "Managed by GitHub Actions — SSH access for EC2" \
+              --description "Managed by GitHub Actions - SSH access for EC2" \
               --vpc-id "${{ secrets.EC2_VPC_ID }}" \
               --region "$AWS_REGION" \
               --query "GroupId" \
