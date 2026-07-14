@@ -19,14 +19,14 @@ jobs:
           chmod 600 ~/.ssh/ec2_key
           ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
       
-      - name: Deploy metadata.sh to EC2
+      - name: Download metadata.sh on EC2 from GitHub
         run: |
-          echo "Uploading metadata.sh from repository to EC2..."
-          scp -i ~/.ssh/ec2_key metadata.sh \
-            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/${{ secrets.EC2_USER }}/metadata.sh
+          echo "Downloading metadata.sh directly on EC2 from GitHub..."
           ssh -i ~/.ssh/ec2_key ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} \
-            "chmod +x /home/${{ secrets.EC2_USER }}/metadata.sh"
-          echo "metadata.sh deployed successfully"
+            "curl -fsSL https://raw.githubusercontent.com/sarowar-alam/github-actions-fundamentals/refs/heads/main/metadata.sh \
+              -o /home/${{ secrets.EC2_USER }}/metadata.sh \
+            && chmod +x /home/${{ secrets.EC2_USER }}/metadata.sh \
+            && echo 'metadata.sh downloaded and ready'"
 
       - name: Execute metadata.sh script
         run: |
