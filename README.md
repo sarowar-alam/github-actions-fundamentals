@@ -245,6 +245,7 @@ This creates:
 # Replace <EC2_PUBLIC_IP> and <PATH_TO_YOUR_EXISTING_KEY> with your values
 ssh -i <PATH_TO_YOUR_EXISTING_KEY> ubuntu@<EC2_PUBLIC_IP> \
   "echo '$(cat ~/.ssh/github_actions_ec2.pub)' >> ~/.ssh/authorized_keys"
+   cat ~/.ssh/github_actions_ec2.pub >> ~/.ssh/authorized_keys
 ```
 
 Or if you already have console/SSM access, paste the public key content directly into `~/.ssh/authorized_keys` on the instance.
