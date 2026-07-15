@@ -7,7 +7,7 @@ git remote set-url origin https://github.com/USERNAME/NEW-REPO.git
 
 ---
 
-## Table of Contents ||| Checking on git push # 2
+## Table of Contents 
 
 1. [What is GitHub Actions?](#what-is-github-actions)
 2. [Architecture Overview](#architecture-overview)
