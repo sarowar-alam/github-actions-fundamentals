@@ -5,8 +5,8 @@ on:
     branches:
       - main
   workflow_dispatch:
-  schedule:
-    - cron: '*/5 * * * *'   # Every 5 minutes
+  #schedule:
+  #  - cron: '*/5 * * * *'   # Every 5 minutes
 
 jobs:
   check-ec2-connectivity:
